@@ -12,44 +12,61 @@
 ## Install
 
 ```bash
-mkdir -p ~/.claude/skills
-curl -L https://github.com/marcown10/nanomode/archive/refs/heads/main.zip -o nanomode.zip
-unzip nanomode.zip
-cp -r nanomode-main/nanomode ~/.claude/skills/
-rm -rf nanomode.zip nanomode-main
+git clone https://github.com/marcown10/nanomode.git /tmp/nanomode
+cp -r /tmp/nanomode/nanomode ~/.claude/skills/
+rm -rf /tmp/nanomode
 ```
 
-Or clone directly:
-
-```bash
-git clone https://github.com/marcown10/nanomode.git
-cp -r nanomode/nanomode ~/.claude/skills/
-```
-
-Then in Claude Code:
-
-```
-nanomode
-```
-
-Claude responds: `[NanoMode V2] ON.`
+Then in Claude Code, type `nanomode`. Claude responds: `[NanoMode V2] ON.`
 
 ---
 
-## What it does
+## The problem it solves
 
-NanoMode compresses Claude's output using 6 systematic rules — eliminating wasted tokens without losing technical accuracy. Rules are explicit and encoded in the skill, so Claude follows them consistently across all content types and long sessions.
+Claude's default responses are full of words that add no information:
 
-### The 6 Compression Rules
+```
+❌  "Sure! I'd be happy to help you with that. The reason your container
+     is restarting is likely because the main process is exiting. I would
+     recommend checking the logs with docker logs to see what's happening."
 
-| Rule | Example |
-|---|---|
-| Kill auxiliary verbs | `cause: X` not `The cause is X` |
-| Symbol compression | `137=OOM \| 0=done \| 143=SIGTERM` |
-| Remove connector prose | delete "To fix this, run:" before a command |
-| Abbreviate paths | `sshd_config.d/*.conf` not `/etc/ssh/sshd_config.d/*.conf` |
-| Collapse parallel items | `P=ok \| L=locked` not a 3-line list |
-| No preamble / no sign-off | start with the answer, end with the last useful token |
+✓   cause: main process exits → restart loop
+    docker logs <id> --tail 50
+    0=cmd done | 1=err | 137=OOM | 143=SIGTERM
+```
+
+Same answer. 80% fewer words. NanoMode eliminates the padding while keeping everything technically accurate.
+
+---
+
+## When to use it
+
+**Use V2 (default) for:**
+- Long coding or infra sessions where you read dozens of responses
+- Debugging — you want the fix, not an explanation of the fix
+- K8s, Docker, HAProxy, SSH config — responses are dense by nature
+
+**Switch to V3 (`/structured`) for:**
+- Bugs you don't understand yet — `[DEBUG]` format is faster to scan
+- Code review — `✗/~/✓` severity format is immediately actionable
+- Explaining something that a teammate will read
+
+**Turn it off (`normal mode`) for:**
+- Writing documentation or prose
+- Conversations where tone matters
+
+---
+
+## The 6 Compression Rules
+
+| Rule | Before | After |
+|---|---|---|
+| Kill auxiliary verbs | `The cause is that X happens` | `cause: X` |
+| Symbol compression | `leads to a re-render` | `→ re-render` |
+| Remove connector prose | `To fix this, run: docker logs` | `docker logs <id>` |
+| Abbreviate paths | `/etc/ssh/sshd_config.d/*.conf` | `sshd_config.d/*.conf` |
+| Collapse parallel items | 3-line bullet list | `0=done \| 1=err \| 137=OOM` |
+| No preamble / no sign-off | `Sure! Great question. I hope this helps!` | *(nothing)* |
 
 ### Always banned
 
@@ -67,13 +84,11 @@ It might be worth | You could potentially | Depending on your setup
 |---|---|---|
 | `nanomode` or `/nano` | **V2 dense** (default) | **-83%** |
 | `/structured` | V3 adaptive patterns | -71% |
-| `/micro` | pure key:value | -85%+ |
-| `/raw` | max symbol density | -88%+ |
+| `/micro` | pure key:value, no prose | -85%+ |
+| `/raw` | maximum symbol density | -88%+ |
 | `normal mode` | off | — |
 
-### V2 dense (default)
-
-Maximum compression. All 6 rules. Minimal structure overhead.
+### V2 dense
 
 ```
 cause: new obj ref each render → shallow compare fails → re-render
@@ -84,27 +99,17 @@ fix:
 debug: DevTools Profiler
 ```
 
-### V3 structured (`/structured`)
+### V3 structured — response patterns by question type
 
-Same 6 rules + adaptive response pattern based on question type. Costs ~34 tokens more than V2 but every response is scannable in 2 seconds.
+Claude classifies the question internally (zero extra tokens) and applies the right format:
 
-Claude classifies the question internally (zero token cost) then applies the optimal pattern:
-
-| Pattern | Signal | Structure |
-|---|---|---|
-| `[DEBUG]` | "not working", "crashing" | fix-first → diag → rare → escape |
-| `[SETUP]` | "how do I install", "configure" | config-first → usage → gotchas |
-| `[FIX]` | specific error, "fix this" | before/after → why → verify |
-| `[COMPARE]` | "vs", "which is better" | verdict → properties → when to deviate |
-| `[REVIEW]` | "review my code" | verdict → ✗/~/✓ by severity |
-
-**`[DEBUG]` example — K8s CrashLoopBackOff:**
+**`[DEBUG]`** — something is broken:
 ```
 [DEBUG] container exits → K8s backoff loop (10s→20s→40s→5min)
 
 diag:
   kubectl logs <pod> --previous   → crash output, start here
-  kubectl describe pod <pod>      → exit code in Last State + Events
+  kubectl describe pod <pod>      → exit code + Events
 
 exit→fix:
   1   → app bug → read --previous
@@ -115,7 +120,7 @@ exit→fix:
 stuck? kubectl run d --image=<img> -it --restart=Never -- /bin/sh
 ```
 
-**`[FIX]` example — JWT expiry:**
+**`[FIX]`** — specific error, known cause:
 ```
 [FIX] don't check manually — jwt.verify() handles expiry
 
@@ -128,62 +133,65 @@ after:
     res.status(401).json({ error: err.name === 'TokenExpiredError' ? 'expired' : 'invalid' });
   }
 
-why:    exp in seconds | Date.now() in ms | < instead of <= lets expired tokens through
+why:    exp in seconds | Date.now() in ms | < instead of <= passes expired tokens
 verify: expired token → 401 expired ✓
 ```
 
-**`[COMPARE]` example — Git rebase vs merge:**
+**`[COMPARE]`** — choosing between options:
 ```
 [COMPARE] merge on shared branches, rebase only locally
 
 merge:  merge commit | exact history | safe | hashes unchanged
-rebase: linear history | rewrites hashes → breaks others who already pulled
+rebase: linear history | rewrites hashes → breaks others who pulled
 
-use merge:  git merge --no-ff feature  (integrate into main)
-use rebase: git rebase origin/main     (update feature | clean before PR)
-⚠           never rebase already-pushed/shared branch
+use merge:  git merge --no-ff feature
+use rebase: git rebase origin/main | rebase -i before PR
+⚠           never rebase already-pushed branch
+```
+
+**`[REVIEW]`** — code or config review:
+```
+verdict: works but 2 blocking issues
+
+✗ DB_PASSWORD in plaintext → move to .env | add .env to .gitignore
+✗ no restart policy → restart: unless-stopped
+~ version: '3' deprecated → remove the line
+~ no healthcheck → orchestrator can't detect unready app
+✓ port mapping 80:3000 correct
 ```
 
 ---
 
 ## Benchmarks
 
-Real token counts measured with word-level tokenization (×1.3 multiplier, standard approximation for Claude's BPE tokenizer). 8 technical prompts across debugging, setup, explanation, and infra topics.
+Token counts across 8 real technical prompts. Numbers are approximate — real savings will be close but vary slightly depending on how Claude phrases a given response.
 
-| Prompt | Normal | NanoMode V2 | NanoMode V3 |
+| Prompt | Normal | V2 | V3 |
 |---|---|---|---|
-| React re-render | 298 | **46** | 84 |
-| JWT expiry | 334 | **48** | 91 |
-| PostgreSQL pool | 316 | **52** | 68 |
+| React re-render bug | 298 | **46** | 84 |
+| JWT expiry fix | 334 | **48** | 91 |
+| PostgreSQL pool setup | 316 | **52** | 68 |
 | Git rebase vs merge | 337 | **58** | 83 |
-| Docker crash | 314 | **58** | 88 |
+| Docker crash loop | 314 | **58** | 88 |
 | HAProxy 503 | 312 | **60** | 96 |
 | SSH root login | 273 | **52** | 94 |
-| K8s CrashLoop | 296 | **53** | 107 |
+| K8s CrashLoopBackOff | 296 | **53** | 107 |
 | **Average** | **310** | **53** | **89** |
 | **vs Normal** | — | **-83%** | -71% |
 
-V3 costs ~34 more tokens per response vs V2 but delivers predictable, scannable structure.
-
-### Why the 6 rules work
-
-The techniques with the highest per-pattern impact:
-- **Symbol compression**: `137=OOM | 0=done` instead of sentences → -69% on those patterns
-- **Connector prose removal**: deleting "To fix this, run:" before every command → -71%
-- **Path abbreviation**: `sshd_config.d/*` vs full paths → -40%
-- **Inline collapse**: `P=ok | L=locked` instead of bullet lists → -47%
+V3 costs ~34 more tokens per response than V2, but every response has a predictable structure you can scan in 2 seconds rather than read in full.
 
 ---
 
 ## What NanoMode never compresses
 
-| Element | Rule |
+| Element | Why |
 |---|---|
-| Code blocks | Always full |
-| Error messages | Verbatim |
-| Technical terms | Exact — polymorphism stays polymorphism |
-| Security warnings | Full |
-| Destructive ops | `rm -rf`, `DROP TABLE`, prod deploys — warn fully |
+| Code blocks | One wrong character breaks it |
+| Error messages | Must be verbatim to be searchable |
+| Technical terms | `polymorphism` stays `polymorphism` |
+| Security warnings | Truncating defeats the purpose |
+| Destructive ops | `rm -rf`, `DROP TABLE`, prod deploys always get full warnings |
 
 ---
 
@@ -191,40 +199,25 @@ The techniques with the highest per-pattern impact:
 
 ```
 nanomode/
-├── SKILL.md                    # Main skill file — loaded by Claude Code
+├── SKILL.md                      # Core skill — loaded on activation
 └── references/
-    ├── banned-patterns.md      # Extended banned phrase list with regex
-    └── benchmarks.md           # Token savings by task type and level
-```
-
-`references/` files are lazy-loaded — only when needed for edge cases. The main `SKILL.md` is the only file Claude reads on every activation.
-
----
-
-## Switch between modes mid-session
-
-```
-/structured   → switch to V3 (complex debug sessions, team use)
-/nano         → switch back to V2 (maximum compression)
-normal mode   → turn off NanoMode
+    ├── banned-patterns.md        # Full banned phrase list (loaded on demand)
+    └── benchmarks.md             # Token savings by task type (loaded on demand)
 ```
 
 ---
 
-## Why explicit rules
+## Why explicit rules beat "be concise"
 
-Most token-saving approaches rely on style hints — vague instructions like "be concise". NanoMode uses explicit, enumerated rules instead:
+Vague style prompts like "be concise" degrade over long conversations — Claude gradually reverts to verbose defaults. NanoMode uses a SKILL.md loaded fresh each session with enumerated, testable rules. No drift because the rules are re-read every time.
 
-- **No style drift** — rules don't degrade over long conversations
-- **Consistent across content types** — applies to prose, paths, exit codes, option lists, commands
-- **V3 structured mode** — readable `[DEBUG]`/`[FIX]`/`[COMPARE]` patterns for complex sessions
-- **Infra-aware** — built with DevOps/SRE workflows in mind (HAProxy, K8s, SSH, Docker)
+The rules also apply to content types that style hints miss: filesystem paths, exit code tables, diagnostic command sequences, option flag lists — not just prose.
 
 ---
 
 ## Science
 
-A March 2026 paper ["Brevity Constraints Reverse Performance Hierarchies in Language Models"](https://arxiv.org/abs/2604.00025) found that constraining LLMs to brief responses improved accuracy by 26 percentage points on certain benchmarks. Less tokens ≠ less correct. Often more correct.
+A March 2026 paper ["Brevity Constraints Reverse Performance Hierarchies in Language Models"](https://arxiv.org/abs/2604.00025) found that constraining LLMs to brief responses improved accuracy by 26 percentage points on certain benchmarks. Shorter is not less correct — often it forces identifying the actual answer rather than surrounding it.
 
 ---
 
@@ -234,4 +227,4 @@ MIT — compress freely.
 
 ## Credits
 
-Marown
+Built by Marco — Senior SysAdmin and DevOps engineer at Iliad. Designed for real infrastructure work: HAProxy, Kubernetes, SSH, Docker, and long coding sessions where every token counts.

@@ -4,8 +4,8 @@ description: >
   Activates extreme token compression for all Claude responses. Use whenever the user says
   "nanomode", "nano mode", "/nano", "less tokens", "be concise", "minimal output",
   "token saver", or any phrase implying they want shorter or cheaper responses. Also activate
-  automatically in long coding or infra sessions. Default mode is V2 dense (-83% tokens,
-  -83% token reduction). Switch to V3 structured with /structured for complex debug or team sessions.
+  automatically in long coding or infra sessions. Default mode is V2 dense (-83% token reduction).
+  Switch to V3 structured with /structured for complex debug or team sessions.
   Trigger aggressively — when in doubt, activate.
 ---
 
