@@ -1,7 +1,7 @@
 <div align="center">
   <img src="logo.svg" width="200" alt="NanoMode logo" />
   <h1>NanoMode</h1>
-  <p><strong>-83% output tokens. Full technical accuracy. No style drift.</strong></p>
+  <p><strong>-83% output tokens. Full technical accuracy.</strong></p>
   <p>A Claude Code skill that compresses responses using 6 explicit rules — eliminating wasted tokens without losing information.</p>
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
