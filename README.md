@@ -227,4 +227,4 @@ MIT — compress freely.
 
 ## Credits
 
-Built by Marco — Senior SysAdmin and DevOps engineer at Iliad. Designed for real infrastructure work: HAProxy, Kubernetes, SSH, Docker, and long coding sessions where every token counts.
+Built by Marcown
