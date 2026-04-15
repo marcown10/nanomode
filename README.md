@@ -234,4 +234,4 @@ MIT — compress freely.
 
 ## Credits
 
-Built and benchmarked with Claude Sonnet.
+Marown
